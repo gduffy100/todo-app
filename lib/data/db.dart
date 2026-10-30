@@ -33,21 +33,39 @@ class AppDatabase extends _$AppDatabase {
     },
   );
 
+  /// Seeds default groups and labels. Seeded rows get deterministic ids and
+  /// an old timestamp so every device has the *same* rows (no duplicates when
+  /// merging data between devices) and any user edit wins a later sync.
   Future<void> _seed() async {
     final groupKeys = initialKeys(defaultGroups.length);
+    final seededAt = DateTime.utc(2000);
+    String slug(String s) =>
+        s.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '-');
     await batch((b) {
       for (var i = 0; i < defaultGroups.length; i++) {
         b.insert(
           taskGroups,
           TaskGroupsCompanion.insert(
+            id: Value('seed-group-${slug(defaultGroups[i])}'),
             name: defaultGroups[i],
             sortKey: groupKeys[i],
             isSystem: const Value(true),
+            createdAt: Value(seededAt),
+            updatedAt: Value(seededAt),
           ),
         );
       }
       for (final (name, color) in defaultLabels) {
-        b.insert(labels, LabelsCompanion.insert(name: name, color: color));
+        b.insert(
+          labels,
+          LabelsCompanion.insert(
+            id: Value('seed-label-${slug(name)}'),
+            name: name,
+            color: color,
+            createdAt: Value(seededAt),
+            updatedAt: Value(seededAt),
+          ),
+        );
       }
     });
   }

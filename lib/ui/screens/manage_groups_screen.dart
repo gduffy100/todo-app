@@ -1,0 +1,42 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../state/providers.dart';
+import '../widgets/group_nav.dart';
+
+class ManageGroupsScreen extends ConsumerWidget {
+  const ManageGroupsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final groups = ref.watch(groupsProvider).value ?? const [];
+    final dao = ref.read(databaseProvider).groupsDao;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Groups')),
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Add group',
+        onPressed: () => addGroup(context, ref),
+        child: const Icon(Icons.add),
+      ),
+      body: ReorderableListView.builder(
+        itemCount: groups.length,
+        onReorderItem: (oldIndex, newIndex) =>
+            dao.reorderGroup(groups[oldIndex].id, newIndex),
+        itemBuilder: (context, i) {
+          final g = groups[i];
+          return ListTile(
+            key: ValueKey(g.id),
+            title: Text(g.name),
+            subtitle: g.isSystem ? const Text('Default group') : null,
+            onTap: () => showGroupMenu(context, ref, g),
+            trailing: ReorderableDragStartListener(
+              index: i,
+              child: const Icon(Icons.drag_handle),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
