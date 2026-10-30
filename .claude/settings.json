@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter:*)",
+      "Bash(dart:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(adb:*)",
+      "PowerShell(flutter:*)",
+      "PowerShell(dart:*)",
+      "PowerShell(git:*)",
+      "PowerShell(gh:*)",
+      "PowerShell(adb:*)"
+    ],
+    "deny": [
+      "Read(android/key.properties)",
+      "Read(**/*.jks)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "node .claude/hooks/format-dart.js" }
+        ]
+      }
+    ]
+  }
+}
