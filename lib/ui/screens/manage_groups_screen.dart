@@ -20,6 +20,7 @@ class ManageGroupsScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
       body: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
         itemCount: groups.length,
         onReorderItem: (oldIndex, newIndex) =>
             dao.reorderGroup(groups[oldIndex].id, newIndex),
@@ -32,7 +33,13 @@ class ManageGroupsScreen extends ConsumerWidget {
             onTap: () => showGroupMenu(context, ref, g),
             trailing: ReorderableDragStartListener(
               index: i,
-              child: const Icon(Icons.drag_handle),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Icon(
+                  Icons.drag_handle,
+                  semanticLabel: 'Reorder ${g.name}',
+                ),
+              ),
             ),
           );
         },

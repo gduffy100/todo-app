@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import '../domain/dependency_graph.dart';
+import '../domain/ordering.dart';
 import 'db.dart';
 
 /// JSON export / import.
@@ -97,8 +99,73 @@ class Backup {
           d.updatedAt,
         );
       }
+      written += await _repair();
     });
     return written;
+  }
+
+  /// Restores invariants a merge can break:
+  /// * dependency edges from two devices can form a cycle; the newest
+  ///   offending edges are soft-deleted;
+  /// * a live task can point at a group deleted on this device; it moves to
+  ///   the end of the first live group.
+  Future<int> _repair() async {
+    var fixed = 0;
+    final now = DateTime.now().toUtc();
+
+    final edges =
+        await (db.select(db.taskDependencies)
+              ..where((d) => d.deletedAt.isNull())
+              ..orderBy([(d) => OrderingTerm.asc(d.updatedAt)]))
+            .get();
+    final graph = <String, Set<String>>{};
+    for (final e in edges) {
+      if (wouldCreateCycle(graph, e.taskId, e.predecessorId)) {
+        await (db.update(
+          db.taskDependencies,
+        )..where((d) => d.id.equals(e.id))).write(
+          TaskDependenciesCompanion(
+            deletedAt: Value(now),
+            updatedAt: Value(now),
+          ),
+        );
+        fixed++;
+      } else {
+        graph.putIfAbsent(e.taskId, () => {}).add(e.predecessorId);
+      }
+    }
+
+    final groups = await db.groupsDao.getGroups();
+    if (groups.isEmpty) return fixed;
+    final liveGroupIds = groups.map((g) => g.id).toSet();
+    final orphans =
+        await (db.select(db.tasks)
+              ..where(
+                (t) => t.deletedAt.isNull() & t.groupId.isNotIn(liveGroupIds),
+              )
+              ..orderBy([(t) => OrderingTerm.asc(t.sortKey)]))
+            .get();
+    if (orphans.isEmpty) return fixed;
+    final target = groups.first.id;
+    final last =
+        await (db.select(db.tasks)
+              ..where((t) => t.groupId.equals(target) & t.deletedAt.isNull())
+              ..orderBy([(t) => OrderingTerm.desc(t.sortKey)])
+              ..limit(1))
+            .getSingleOrNull();
+    var key = last?.sortKey;
+    for (final t in orphans) {
+      key = keyBetween(key, null);
+      await (db.update(db.tasks)..where((r) => r.id.equals(t.id))).write(
+        TasksCompanion(
+          groupId: Value(target),
+          sortKey: Value(key),
+          updatedAt: Value(now),
+        ),
+      );
+      fixed++;
+    }
+    return fixed;
   }
 
   Future<int> _merge<T extends DataClass>(

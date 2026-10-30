@@ -19,6 +19,23 @@ String keyBetween(String? before, String? after) {
   return _midpoint(a, after);
 }
 
+/// Key for inserting at position [index] of the ascending list [sortedKeys]
+/// (which must not contain the item being moved). Tolerates duplicate keys,
+/// which can appear after merging data from two devices: the upper bound is
+/// the first key strictly greater than the lower neighbour.
+String keyAtIndex(List<String> sortedKeys, int index) {
+  final i = index.clamp(0, sortedKeys.length);
+  final low = i == 0 ? null : sortedKeys[i - 1];
+  String? high;
+  for (var j = i; j < sortedKeys.length; j++) {
+    if (low == null || sortedKeys[j].compareTo(low) > 0) {
+      high = sortedKeys[j];
+      break;
+    }
+  }
+  return keyBetween(low, high);
+}
+
 /// Returns [count] ascending keys, evenly spread from the start of the space.
 List<String> initialKeys(int count) {
   final keys = <String>[];

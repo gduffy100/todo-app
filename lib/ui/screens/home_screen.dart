@@ -92,7 +92,6 @@ class _ExpandedLayout extends ConsumerWidget {
         actions: const [_MainMenu()],
       ),
       floatingActionButton: const _AddTaskButton(selectAfterCreate: true),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: Row(
         children: [
           const GroupRail(),
@@ -153,6 +152,7 @@ class _AddTaskButton extends ConsumerWidget {
         if (title == null) return;
         // New tasks pick up the active label filter so they stay visible.
         final filter = ref.read(labelFilterProvider);
+        final selection = ref.read(selectedTaskIdProvider.notifier);
         final id = await ref
             .read(databaseProvider)
             .tasksDao
@@ -161,9 +161,7 @@ class _AddTaskButton extends ConsumerWidget {
               groupId: group.id,
               labelIds: filter.labelIds,
             );
-        if (selectAfterCreate) {
-          ref.read(selectedTaskIdProvider.notifier).set(id);
-        }
+        if (selectAfterCreate) selection.set(id);
       },
       child: const Icon(Icons.add),
     );

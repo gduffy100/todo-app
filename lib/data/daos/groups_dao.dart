@@ -12,7 +12,10 @@ class GroupsDao extends DatabaseAccessor<AppDatabase> with _$GroupsDaoMixin {
   SimpleSelectStatement<$TaskGroupsTable, TaskGroup> _live() =>
       select(taskGroups)
         ..where((g) => g.deletedAt.isNull())
-        ..orderBy([(g) => OrderingTerm.asc(g.sortKey)]);
+        ..orderBy([
+          (g) => OrderingTerm.asc(g.sortKey),
+          (g) => OrderingTerm.asc(g.id),
+        ]);
 
   Stream<List<TaskGroup>> watchGroups() => _live().watch();
   Future<List<TaskGroup>> getGroups() => _live().get();
@@ -37,11 +40,7 @@ class GroupsDao extends DatabaseAccessor<AppDatabase> with _$GroupsDaoMixin {
   /// Moves group [id] so it ends up at [newIndex] in the ordered list.
   Future<void> reorderGroup(String id, int newIndex) async {
     final others = (await getGroups()).where((g) => g.id != id).toList();
-    final i = newIndex.clamp(0, others.length);
-    final key = keyBetween(
-      i == 0 ? null : others[i - 1].sortKey,
-      i == others.length ? null : others[i].sortKey,
-    );
+    final key = keyAtIndex([for (final g in others) g.sortKey], newIndex);
     await (update(taskGroups)..where((g) => g.id.equals(id))).write(
       TaskGroupsCompanion(sortKey: Value(key), updatedAt: Value(nowUtc())),
     );

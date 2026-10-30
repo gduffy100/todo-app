@@ -85,6 +85,9 @@ Future<void> importData(BuildContext context, WidgetRef ref) async {
     message = 'Import complete: $n item${n == 1 ? '' : 's'} updated';
   } on FormatException catch (e) {
     message = 'Import failed: ${e.message}';
+  } catch (_) {
+    // The transaction rolled back, so nothing was changed.
+    message = 'Import failed: the backup is damaged or incompatible';
   }
   if (context.mounted) {
     ScaffoldMessenger.of(context)

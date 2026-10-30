@@ -19,7 +19,10 @@ class GroupDropTarget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DragTarget<String>(
-      onWillAcceptWithDetails: (_) => true,
+      // Tasks are dragged from the current group's list; dropping one back
+      // on its own group would just move it to the end.
+      onWillAcceptWithDetails: (_) =>
+          ref.read(currentGroupProvider)?.id != group.id,
       onAcceptWithDetails: (details) async {
         await ref
             .read(databaseProvider)
@@ -200,10 +203,11 @@ Future<String?> showNameDialog(
 }
 
 Future<void> addGroup(BuildContext context, WidgetRef ref) async {
+  final dao = ref.read(databaseProvider).groupsDao;
+  final selection = ref.read(selectedGroupIdProvider.notifier);
   final name = await showNameDialog(context, title: 'New group');
   if (name == null) return;
-  final id = await ref.read(databaseProvider).groupsDao.createGroup(name);
-  ref.read(selectedGroupIdProvider.notifier).set(id);
+  selection.set(await dao.createGroup(name));
 }
 
 Future<void> showGroupMenu(
@@ -254,7 +258,8 @@ Future<void> showGroupMenu(
         MaterialPageRoute<void>(builder: (_) => const ManageGroupsScreen()),
       );
     case 'delete':
+      final selection = ref.read(selectedGroupIdProvider.notifier);
       await dao.deleteGroup(group.id);
-      ref.read(selectedGroupIdProvider.notifier).set(null);
+      selection.set(null);
   }
 }

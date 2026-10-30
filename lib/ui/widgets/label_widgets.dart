@@ -5,7 +5,7 @@ import '../../domain/palette.dart';
 
 /// Readable text colour on a label background.
 Color onLabelColor(Color c) =>
-    c.computeLuminance() > 0.5 ? Colors.black87 : Colors.white;
+    c.computeLuminance() > 0.179 ? Colors.black : Colors.white;
 
 class LabelChip extends StatelessWidget {
   const LabelChip({super.key, required this.label, this.dense = false});
@@ -62,8 +62,8 @@ class _LabelDotsState extends State<LabelDots> {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _expanded = !_expanded),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
           child: AnimatedSize(
             duration: const Duration(milliseconds: 180),
             alignment: Alignment.centerLeft,

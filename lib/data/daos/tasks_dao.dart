@@ -33,7 +33,10 @@ class TasksDao extends DatabaseAccessor<AppDatabase> with _$TasksDaoMixin {
         final live = t.deletedAt.isNull();
         return groupId == null ? live : live & t.groupId.equals(groupId);
       })
-      ..orderBy([(t) => OrderingTerm.asc(t.sortKey)]);
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.sortKey),
+        (t) => OrderingTerm.asc(t.id),
+      ]);
     final rows = await query.get();
     if (rows.isEmpty) return const [];
 
@@ -200,6 +203,34 @@ class TasksDao extends DatabaseAccessor<AppDatabase> with _$TasksDaoMixin {
         }
       });
 
+  /// Adds or removes a single label on a task. Unlike [setLabels] this does
+  /// not depend on a possibly stale snapshot of the task's other labels.
+  Future<void> toggleLabel(String taskId, String labelId, bool on) =>
+      transaction(() async {
+        final now = nowUtc();
+        final existing =
+            await (select(taskLabels)..where(
+                  (tl) => tl.taskId.equals(taskId) & tl.labelId.equals(labelId),
+                ))
+                .getSingleOrNull();
+        if (existing == null) {
+          if (on) {
+            await into(taskLabels).insert(
+              TaskLabelsCompanion.insert(taskId: taskId, labelId: labelId),
+            );
+          }
+        } else if ((existing.deletedAt == null) != on) {
+          await (update(
+            taskLabels,
+          )..where((tl) => tl.id.equals(existing.id))).write(
+            TaskLabelsCompanion(
+              deletedAt: Value(on ? null : now),
+              updatedAt: Value(now),
+            ),
+          );
+        }
+      });
+
   /// Adds [predecessorId] as a predecessor of [taskId].
   /// Throws [CycleException] if that would create a dependency cycle.
   Future<void> addPredecessor(String taskId, String predecessorId) =>
@@ -276,12 +307,13 @@ class TasksDao extends DatabaseAccessor<AppDatabase> with _$TasksDaoMixin {
                         ? const Constant(true)
                         : t.id.equals(excludeId).not()),
               )
-              ..orderBy([(t) => OrderingTerm.asc(t.sortKey)]))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.sortKey),
+                (t) => OrderingTerm.asc(t.id),
+              ]))
             .get();
-    final i = (index ?? siblings.length).clamp(0, siblings.length);
-    return keyBetween(
-      i == 0 ? null : siblings[i - 1].sortKey,
-      i == siblings.length ? null : siblings[i].sortKey,
-    );
+    return keyAtIndex([
+      for (final t in siblings) t.sortKey,
+    ], index ?? siblings.length);
   }
 }

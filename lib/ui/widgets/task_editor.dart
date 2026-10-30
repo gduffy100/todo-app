@@ -194,22 +194,17 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
                 label: Text(l.name),
                 selected: selectedLabelIds.contains(l.id),
                 selectedColor: Color(l.color).withValues(alpha: 0.35),
-                onSelected: (on) => dao.setLabels(view.id, {
-                  ...selectedLabelIds.where((x) => x != l.id),
-                  if (on) l.id,
-                }),
+                onSelected: (on) => dao.toggleLabel(view.id, l.id, on),
               ),
             ActionChip(
               avatar: const Icon(Icons.add, size: 16),
               label: const Text('New label'),
               onPressed: () async {
+                final labelsDao = ref.read(databaseProvider).labelsDao;
                 final result = await showLabelDialog(context);
                 if (result == null) return;
-                final id = await ref
-                    .read(databaseProvider)
-                    .labelsDao
-                    .createLabel(result.$1, result.$2);
-                await dao.setLabels(view.id, {...selectedLabelIds, id});
+                final id = await labelsDao.createLabel(result.$1, result.$2);
+                await dao.toggleLabel(view.id, id, true);
               },
             ),
           ],
@@ -298,9 +293,11 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             onPressed: () async {
               _debounce?.cancel();
               _debounce = null;
+              final selection = ref.read(selectedTaskIdProvider.notifier);
+              final onClose = widget.onClose;
               await dao.deleteTask(view.id);
-              ref.read(selectedTaskIdProvider.notifier).set(null);
-              widget.onClose?.call();
+              selection.set(null);
+              onClose?.call();
             },
           ),
         ),
