@@ -12,7 +12,7 @@ Flutter SDK lives at `C:\dev\flutter` (on PATH as `flutter` / `dart`).
 
 ```bash
 flutter pub get
-dart run build_runner build --delete-conflicting-outputs   # regenerate Drift *.g.dart after schema/DAO changes
+dart run build_runner build   # regenerate Drift *.g.dart after schema/DAO changes
 flutter analyze                                             # must be clean before commit
 flutter test                                                # unit + widget tests
 flutter test --coverage                                     # coverage → coverage/lcov.info

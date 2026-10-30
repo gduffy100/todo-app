@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ui/screens/home_screen.dart';
+
 void main() {
   runApp(const ProviderScope(child: TodoApp()));
 }
@@ -18,7 +20,7 @@ class TodoApp extends StatelessWidget {
         colorSchemeSeed: Colors.teal,
         brightness: Brightness.dark,
       ),
-      home: const Scaffold(body: Center(child: Text('To-Do'))),
+      home: const HomeScreen(),
     );
   }
 }

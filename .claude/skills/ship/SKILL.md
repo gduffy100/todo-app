@@ -4,7 +4,7 @@ description: Analyze, test, commit, push the current branch and open (or update)
 ---
 
 1. If on `main`, create a branch named after the work (`feat/...`, `fix/...`, `chore/...`) before committing.
-2. If any Drift table or DAO changed, run `dart run build_runner build --delete-conflicting-outputs`.
+2. If any Drift table or DAO changed, run `dart run build_runner build`.
 3. Run `dart format lib test integration_test` and `flutter analyze`. Fix every issue.
 4. Run `flutter test`. If anything fails, stop and fix it, or report it. Never commit with failing tests.
 5. Run the `code-reviewer` subagent on the diff. Address high-severity findings.

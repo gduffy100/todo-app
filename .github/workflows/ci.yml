@@ -21,9 +21,10 @@ jobs:
       - run: flutter pub get
       - name: Verify generated code is up to date
         run: |
-          dart run build_runner build --delete-conflicting-outputs
+          dart run build_runner build
           git diff --exit-code -- '*.g.dart'
-      - run: dart format --output=none --set-exit-if-changed lib test integration_test
+      - name: Check formatting (excluding generated code)
+        run: dart format --output=none --set-exit-if-changed $(git ls-files '*.dart' | grep -v '\.g\.dart$')
       - run: flutter analyze
       - run: flutter test --coverage
       - uses: actions/upload-artifact@v4
