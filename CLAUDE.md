@@ -3,7 +3,7 @@
 Guidance for Claude Code working in this repository.
 
 ## What this is
-A local-first to-do app built with Flutter. It targets Android first (side-loaded, then the Play Store), plus desktop/mobile web; iOS comes later. Data lives in SQLite via Drift: native SQLite on mobile, SQLite-WASM in the browser.
+**Listo**: a local-first to-do app built with Flutter. (Repo and Dart package are still named `todo-app` / `todo_app`.) It targets Android first (side-loaded, then the Play Store), plus desktop/mobile web; iOS comes later. Data lives in SQLite via Drift: native SQLite on mobile, SQLite-WASM in the browser.
 
 **Stack:** Flutter (stable) · Dart · Drift · Riverpod · uuid · intl.
 

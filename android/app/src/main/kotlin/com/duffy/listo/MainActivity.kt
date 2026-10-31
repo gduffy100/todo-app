@@ -1,4 +1,4 @@
-package com.gduffy.todo_app
+package com.duffy.listo
 
 import io.flutter.embedding.android.FlutterActivity
 
