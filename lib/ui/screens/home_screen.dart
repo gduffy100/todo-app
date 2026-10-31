@@ -139,7 +139,7 @@ class _Title extends ConsumerWidget {
     final shown = ref.watch(currentListsProvider);
     final total = ref.watch(groupsProvider).value?.length ?? 0;
     final text = switch (shown.length) {
-      0 => 'To-Do',
+      0 => 'Listo',
       1 => shown.single.name,
       2 => '${shown[0].name} + ${shown[1].name}',
       final n when n == total => 'All lists',
