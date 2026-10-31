@@ -44,6 +44,9 @@ web/               sqlite3.wasm + drift_worker.js for Drift web
 - Schema changes need a Drift `schemaVersion` bump plus a migration step, and a test for the migration.
 - Predecessors form a DAG. Reject any edge that would create a cycle.
 
+## Terminology
+The UI calls them **lists** (Today, Tomorrow, Longer term, user lists); the code and DB call them groups (`task_groups`, `GroupsDao`, `groupId`). One or more lists can be shown at once (`selectedListIdsProvider`); several shown lists render as sections in a combined view. A list will be the unit of sharing.
+
 ## Responsive layouts
 Layout is chosen by width (see `ui/layout/breakpoints.dart`), not by platform:
 - **compact** (< 600dp): phone portrait. Labels shown as dots; editor in a bottom sheet; group bar at the bottom.

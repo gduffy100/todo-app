@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/db.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
 import '../layout/breakpoints.dart';
@@ -35,12 +36,8 @@ class _SinglePaneLayout extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final group = ref.watch(currentGroupProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(group?.name ?? 'To-Do'),
-        actions: const [_MainMenu()],
-      ),
+      appBar: AppBar(title: const _Title(), actions: const [_MainMenu()]),
       body: Column(
         children: [
           const LabelFilterBar(),
@@ -76,21 +73,17 @@ class _SinglePaneLayout extends ConsumerWidget {
   }
 }
 
-/// Tablet landscape / desktop: group rail · task list · detail pane.
+/// Tablet landscape / desktop: list rail · task list · detail pane.
 class _ExpandedLayout extends ConsumerWidget {
   const _ExpandedLayout();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final group = ref.watch(currentGroupProvider);
     final selectedId = ref.watch(selectedTaskIdProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(group?.name ?? 'To-Do'),
-        actions: const [_MainMenu()],
-      ),
+      appBar: AppBar(title: const _Title(), actions: const [_MainMenu()]),
       floatingActionButton: const _AddTaskButton(selectAfterCreate: true),
       body: Row(
         children: [
@@ -137,6 +130,25 @@ class _ExpandedLayout extends ConsumerWidget {
   }
 }
 
+/// App bar title: the list name, or a summary in the combined view.
+class _Title extends ConsumerWidget {
+  const _Title();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shown = ref.watch(currentListsProvider);
+    final total = ref.watch(groupsProvider).value?.length ?? 0;
+    final text = switch (shown.length) {
+      0 => 'To-Do',
+      1 => shown.single.name,
+      2 => '${shown[0].name} + ${shown[1].name}',
+      final n when n == total => 'All lists',
+      final n => '$n lists',
+    };
+    return Text(text, overflow: TextOverflow.ellipsis);
+  }
+}
+
 class _AddTaskButton extends ConsumerWidget {
   const _AddTaskButton({this.selectAfterCreate = false});
   final bool selectAfterCreate;
@@ -146,26 +158,79 @@ class _AddTaskButton extends ConsumerWidget {
     return FloatingActionButton(
       tooltip: 'Add task',
       onPressed: () async {
-        final group = ref.read(currentGroupProvider);
-        if (group == null) return;
-        final title = await showNameDialog(context, title: 'New task');
-        if (title == null) return;
+        final lists = ref.read(currentListsProvider);
+        if (lists.isEmpty) return;
         // New tasks pick up the active label filter so they stay visible.
         final filter = ref.read(labelFilterProvider);
         final selection = ref.read(selectedTaskIdProvider.notifier);
-        final id = await ref
-            .read(databaseProvider)
-            .tasksDao
-            .createTask(
-              title: title,
-              groupId: group.id,
-              labelIds: filter.labelIds,
-            );
+        final dao = ref.read(databaseProvider).tasksDao;
+        final result = await _showNewTaskDialog(context, lists);
+        if (result == null) return;
+        final id = await dao.createTask(
+          title: result.title,
+          groupId: result.listId,
+          labelIds: filter.labelIds,
+        );
         if (selectAfterCreate) selection.set(id);
       },
       child: const Icon(Icons.add),
     );
   }
+}
+
+/// Asks for a task title and, in the combined view, which list it goes in.
+Future<({String title, String listId})?> _showNewTaskDialog(
+  BuildContext context,
+  List<TaskGroup> lists,
+) {
+  final controller = TextEditingController();
+  var listId = lists.first.id;
+  return showDialog<({String title, String listId})>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) {
+        void submit() {
+          final title = controller.text.trim();
+          if (title.isNotEmpty) {
+            Navigator.pop(context, (title: title, listId: listId));
+          }
+        }
+
+        return AlertDialog(
+          title: const Text('New task'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 500,
+                decoration: const InputDecoration(labelText: 'Name'),
+                onSubmitted: (_) => submit(),
+              ),
+              if (lists.length > 1)
+                DropdownButtonFormField<String>(
+                  initialValue: listId,
+                  decoration: const InputDecoration(labelText: 'List'),
+                  items: [
+                    for (final l in lists)
+                      DropdownMenuItem(value: l.id, child: Text(l.name)),
+                  ],
+                  onChanged: (v) => setState(() => listId = v ?? listId),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(onPressed: submit, child: const Text('Save')),
+          ],
+        );
+      },
+    ),
+  );
 }
 
 class _MainMenu extends ConsumerWidget {
@@ -203,7 +268,7 @@ class _MainMenu extends ConsumerWidget {
           child: const Text('Show completed'),
         ),
         const PopupMenuItem(value: 'labels', child: Text('Manage labels')),
-        const PopupMenuItem(value: 'groups', child: Text('Manage groups')),
+        const PopupMenuItem(value: 'groups', child: Text('Manage lists')),
         const PopupMenuDivider(),
         const PopupMenuItem(value: 'export', child: Text('Export data')),
         const PopupMenuItem(value: 'import', child: Text('Import data')),
