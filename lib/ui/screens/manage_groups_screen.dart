@@ -13,9 +13,9 @@ class ManageGroupsScreen extends ConsumerWidget {
     final dao = ref.read(databaseProvider).groupsDao;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Groups')),
+      appBar: AppBar(title: const Text('Lists')),
       floatingActionButton: FloatingActionButton(
-        tooltip: 'Add group',
+        tooltip: 'Add list',
         onPressed: () => addGroup(context, ref),
         child: const Icon(Icons.add),
       ),
@@ -29,7 +29,7 @@ class ManageGroupsScreen extends ConsumerWidget {
           return ListTile(
             key: ValueKey(g.id),
             title: Text(g.name),
-            subtitle: g.isSystem ? const Text('Default group') : null,
+            subtitle: g.isSystem ? const Text('Default list') : null,
             onTap: () => showGroupMenu(context, ref, g),
             trailing: ReorderableDragStartListener(
               index: i,
