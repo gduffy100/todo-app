@@ -5,7 +5,9 @@ import '../../data/db.dart';
 import '../../state/providers.dart';
 import '../screens/manage_groups_screen.dart';
 
-/// Wraps a group destination so tasks can be dragged onto it to move them.
+/// Wraps a list destination so tasks can be dragged onto it to move them.
+///
+/// The `task_groups` table holds what the UI calls "lists".
 class GroupDropTarget extends ConsumerWidget {
   const GroupDropTarget({
     super.key,
@@ -19,10 +21,13 @@ class GroupDropTarget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DragTarget<String>(
-      // Tasks are dragged from the current group's list; dropping one back
-      // on its own group would just move it to the end.
-      onWillAcceptWithDetails: (_) =>
-          ref.read(currentGroupProvider)?.id != group.id,
+      // Dropping a task onto the list it is already in would only move it to
+      // the end, so refuse it.
+      onWillAcceptWithDetails: (details) {
+        final tasks = ref.read(allTasksProvider).value ?? const [];
+        final task = tasks.where((t) => t.id == details.data).firstOrNull;
+        return task == null || task.task.groupId != group.id;
+      },
       onAcceptWithDetails: (details) async {
         await ref
             .read(databaseProvider)
@@ -45,14 +50,15 @@ class GroupDropTarget extends ConsumerWidget {
   }
 }
 
-/// Horizontal group bar shown at the bottom on compact/medium layouts.
+/// Horizontal list bar shown at the bottom on compact/medium layouts.
 class GroupBar extends ConsumerWidget {
   const GroupBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groups = ref.watch(groupsProvider).value ?? const [];
-    final current = ref.watch(currentGroupProvider);
+    final shown = {for (final g in ref.watch(currentListsProvider)) g.id};
+    final combine = ref.watch(combineModeProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return Material(
@@ -66,6 +72,18 @@ class GroupBar extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             children: [
+              _CombineToggle(combine: combine),
+              if (combine)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: FilterChip(
+                    label: const Text('All'),
+                    selected: shown.length == groups.length,
+                    onSelected: (_) => ref
+                        .read(selectedListIdsProvider.notifier)
+                        .selectAll(groups.map((g) => g.id)),
+                  ),
+                ),
               for (final g in groups)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -77,20 +95,35 @@ class GroupBar extends ConsumerWidget {
                       duration: const Duration(milliseconds: 120),
                       child: GestureDetector(
                         onLongPress: () => showGroupMenu(context, ref, g),
-                        child: ChoiceChip(
-                          label: Text(g.name),
-                          selected: g.id == current?.id,
-                          side: hovering
-                              ? BorderSide(color: scheme.primary, width: 2)
-                              : null,
-                          onSelected: (_) => _select(ref, g),
-                        ),
+                        child: combine
+                            ? FilterChip(
+                                label: Text(g.name),
+                                selected: shown.contains(g.id),
+                                side: hovering
+                                    ? BorderSide(
+                                        color: scheme.primary,
+                                        width: 2,
+                                      )
+                                    : null,
+                                onSelected: (_) => _tap(ref, g),
+                              )
+                            : ChoiceChip(
+                                label: Text(g.name),
+                                selected: shown.contains(g.id),
+                                side: hovering
+                                    ? BorderSide(
+                                        color: scheme.primary,
+                                        width: 2,
+                                      )
+                                    : null,
+                                onSelected: (_) => _tap(ref, g),
+                              ),
                       ),
                     ),
                   ),
                 ),
               IconButton(
-                tooltip: 'Add group',
+                tooltip: 'Add list',
                 icon: const Icon(Icons.add),
                 onPressed: () => addGroup(context, ref),
               ),
@@ -102,7 +135,7 @@ class GroupBar extends ConsumerWidget {
   }
 }
 
-/// Vertical group rail shown on the expanded (tablet landscape / desktop)
+/// Vertical list rail shown on the expanded (tablet landscape / desktop)
 /// layout.
 class GroupRail extends ConsumerWidget {
   const GroupRail({super.key});
@@ -110,7 +143,8 @@ class GroupRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final groups = ref.watch(groupsProvider).value ?? const [];
-    final current = ref.watch(currentGroupProvider);
+    final shown = {for (final g in ref.watch(currentListsProvider)) g.id};
+    final combine = ref.watch(combineModeProvider);
     final scheme = Theme.of(context).colorScheme;
 
     return SizedBox(
@@ -119,12 +153,28 @@ class GroupRail extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-            child: Text(
-              'Groups',
-              style: Theme.of(context).textTheme.titleSmall,
+            padding: const EdgeInsets.fromLTRB(12, 0, 0, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Lists',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                _CombineToggle(combine: combine),
+              ],
             ),
           ),
+          if (combine)
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.select_all),
+              title: const Text('All lists'),
+              onTap: () => ref
+                  .read(selectedListIdsProvider.notifier)
+                  .selectAll(groups.map((g) => g.id)),
+            ),
           for (final g in groups)
             GroupDropTarget(
               key: ValueKey('grouprail-${g.id}'),
@@ -139,13 +189,21 @@ class GroupRail extends ConsumerWidget {
                         ? BorderSide(color: scheme.primary, width: 2)
                         : BorderSide.none,
                   ),
-                  selected: g.id == current?.id,
+                  selected: shown.contains(g.id),
                   selectedTileColor: scheme.secondaryContainer,
-                  leading: Icon(
-                    g.isSystem ? Icons.event_note_outlined : Icons.folder_open,
-                  ),
+                  leading: combine
+                      ? Icon(
+                          shown.contains(g.id)
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                        )
+                      : Icon(
+                          g.isSystem
+                              ? Icons.event_note_outlined
+                              : Icons.folder_open,
+                        ),
                   title: Text(g.name),
-                  onTap: () => _select(ref, g),
+                  onTap: () => _tap(ref, g),
                   onLongPress: () => showGroupMenu(context, ref, g),
                 ),
               ),
@@ -153,7 +211,7 @@ class GroupRail extends ConsumerWidget {
           ListTile(
             dense: true,
             leading: const Icon(Icons.add),
-            title: const Text('Add group'),
+            title: const Text('Add list'),
             onTap: () => addGroup(context, ref),
           ),
         ],
@@ -162,9 +220,41 @@ class GroupRail extends ConsumerWidget {
   }
 }
 
-void _select(WidgetRef ref, TaskGroup g) {
-  ref.read(selectedGroupIdProvider.notifier).set(g.id);
-  ref.read(selectedTaskIdProvider.notifier).set(null);
+/// Switches to [g], or adds/removes it from the combined view in combine
+/// mode.
+void _tap(WidgetRef ref, TaskGroup g) {
+  final selection = ref.read(selectedListIdsProvider.notifier);
+  if (ref.read(combineModeProvider)) {
+    selection.toggle(g.id, fallbackId: ref.read(currentGroupProvider)!.id);
+  } else {
+    selection.selectOnly(g.id);
+    ref.read(selectedTaskIdProvider.notifier).set(null);
+  }
+}
+
+/// Toggles combine mode. Leaving it collapses the view to the first list.
+class _CombineToggle extends ConsumerWidget {
+  const _CombineToggle({required this.combine});
+  final bool combine;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      tooltip: combine ? 'Show one list' : 'Combine lists',
+      isSelected: combine,
+      icon: const Icon(Icons.layers_outlined),
+      selectedIcon: const Icon(Icons.layers),
+      onPressed: () {
+        ref.read(combineModeProvider.notifier).set(!combine);
+        if (combine) {
+          final first = ref.read(currentGroupProvider);
+          if (first != null) {
+            ref.read(selectedListIdsProvider.notifier).selectOnly(first.id);
+          }
+        }
+      },
+    );
+  }
 }
 
 Future<String?> showNameDialog(
@@ -204,10 +294,10 @@ Future<String?> showNameDialog(
 
 Future<void> addGroup(BuildContext context, WidgetRef ref) async {
   final dao = ref.read(databaseProvider).groupsDao;
-  final selection = ref.read(selectedGroupIdProvider.notifier);
-  final name = await showNameDialog(context, title: 'New group');
+  final selection = ref.read(selectedListIdsProvider.notifier);
+  final name = await showNameDialog(context, title: 'New list');
   if (name == null) return;
-  selection.set(await dao.createGroup(name));
+  selection.selectOnly(await dao.createGroup(name));
 }
 
 Future<void> showGroupMenu(
@@ -230,14 +320,14 @@ Future<void> showGroupMenu(
           ),
           ListTile(
             leading: const Icon(Icons.swap_vert),
-            title: const Text('Manage groups'),
+            title: const Text('Manage lists'),
             onTap: () => Navigator.pop(context, 'manage'),
           ),
           if (!group.isSystem)
             ListTile(
               leading: const Icon(Icons.delete_outline),
-              title: const Text('Delete group'),
-              subtitle: const Text('Its tasks move to the first group'),
+              title: const Text('Delete list'),
+              subtitle: const Text('Its tasks move to the first list'),
               onTap: () => Navigator.pop(context, 'delete'),
             ),
         ],
@@ -249,7 +339,7 @@ Future<void> showGroupMenu(
     case 'rename':
       final name = await showNameDialog(
         context,
-        title: 'Rename group',
+        title: 'Rename list',
         initial: group.name,
       );
       if (name != null) await dao.renameGroup(group.id, name);
@@ -258,8 +348,8 @@ Future<void> showGroupMenu(
         MaterialPageRoute<void>(builder: (_) => const ManageGroupsScreen()),
       );
     case 'delete':
-      final selection = ref.read(selectedGroupIdProvider.notifier);
+      final selection = ref.read(selectedListIdsProvider.notifier);
       await dao.deleteGroup(group.id);
-      selection.set(null);
+      selection.selectAll(const []);
   }
 }

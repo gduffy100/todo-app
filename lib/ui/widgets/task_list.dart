@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/db.dart';
 import '../../data/models.dart';
 import '../../domain/reorder.dart';
 import '../../state/providers.dart';
 import '../layout/breakpoints.dart';
+import 'group_nav.dart';
 import 'task_tile.dart';
 
-/// Ordered task list for the current group.
+/// Task list for the shown lists.
 ///
-/// * Drag the handle to reorder within the group.
-/// * Long-press anywhere else on a task and drop it on a group in the
-///   group bar / rail to move it there.
+/// * One list: a plain reorderable list.
+/// * Several lists (combined view): one section per list with a pinned
+///   header. Dropping a task on a header moves it to that list.
+/// * Drag the handle to reorder within a list; long-press anywhere else and
+///   drop on a list (header, bar chip or rail item) to move the task there.
 class TaskList extends ConsumerStatefulWidget {
   const TaskList({super.key, required this.size, required this.onOpen});
 
@@ -23,19 +27,29 @@ class TaskList extends ConsumerStatefulWidget {
 }
 
 class _TaskListState extends ConsumerState<TaskList> {
-  /// Locally reordered list shown until the database stream re-emits, so a
-  /// drop doesn't briefly snap back to the old order.
-  List<TaskView>? _optimistic;
-  List<TaskView>? _optimisticBase;
+  /// Per list: locally reordered tasks shown until the database stream
+  /// re-emits (keyed by the list emitted at reorder time), so a drop doesn't
+  /// briefly snap back.
+  final _optimistic = <String, ({List<TaskView> base, List<TaskView> order})>{};
+
+  List<TaskView> _resolve(ListSection section) {
+    final pending = _optimistic[section.list.id];
+    if (pending == null) return section.tasks;
+    if (!identical(pending.base, section.tasks)) {
+      _optimistic.remove(section.list.id);
+      return section.tasks;
+    }
+    return pending.order;
+  }
 
   Future<void> _reorder(
+    ListSection section,
     List<TaskView> tasks,
     int oldIndex,
     int newIndex,
   ) async {
-    final group = ref.read(currentGroupProvider);
-    if (group == null) return;
-    final full = ref.read(groupTasksProvider(group.id)).value ?? const [];
+    final listId = section.list.id;
+    final full = ref.read(groupTasksProvider(listId)).value ?? const [];
     final index = fullIndexForVisibleDrop(
       fullIds: full.map((t) => t.id).toList(),
       visibleIds: tasks.map((t) => t.id).toList(),
@@ -44,82 +58,155 @@ class _TaskListState extends ConsumerState<TaskList> {
     );
     final moved = tasks[oldIndex];
     setState(() {
-      _optimisticBase = tasks;
-      _optimistic = [...tasks]
-        ..removeAt(oldIndex)
-        ..insert(newIndex, moved);
+      _optimistic[listId] = (
+        base: section.tasks,
+        order: [...tasks]
+          ..removeAt(oldIndex)
+          ..insert(newIndex, moved),
+      );
     });
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(databaseProvider).tasksDao.reorder(moved.id, index);
     } catch (e) {
-      if (mounted) setState(() => _optimistic = null);
+      if (mounted) setState(() => _optimistic.remove(listId));
       messenger.showSnackBar(SnackBar(content: Text('Could not reorder: $e')));
     }
   }
 
+  Widget _item(TaskView view, int index, String? selectedId) {
+    final size = widget.size;
+    final tile = TaskTile(
+      view: view,
+      size: size,
+      selected: size == LayoutSize.expanded && view.id == selectedId,
+      onTap: () => widget.onOpen(view),
+      onToggleComplete: (v) =>
+          ref.read(databaseProvider).tasksDao.setCompleted(view.id, v),
+      dragHandle: ReorderableDragStartListener(
+        index: index,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Icon(
+            Icons.drag_indicator,
+            semanticLabel: 'Reorder ${view.task.title}',
+          ),
+        ),
+      ),
+    );
+    return LongPressDraggable<String>(
+      key: ValueKey(view.id),
+      data: view.id,
+      hapticFeedbackOnStart: true,
+      feedback: _DragFeedback(title: view.task.title),
+      childWhenDragging: Opacity(opacity: 0.4, child: tile),
+      child: tile,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final group = ref.watch(currentGroupProvider);
-    final visible = ref.watch(visibleTasksProvider);
+    final visible = ref.watch(visibleSectionsProvider);
     final selectedId = ref.watch(selectedTaskIdProvider);
-    final dao = ref.read(databaseProvider).tasksDao;
-    final size = widget.size;
 
     return visible.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Could not load tasks: $e')),
-      data: (fresh) {
-        // A new emission from the database supersedes the optimistic order.
-        if (_optimistic != null && !identical(fresh, _optimisticBase)) {
-          _optimistic = null;
-          _optimisticBase = null;
-        }
-        final tasks = _optimistic ?? fresh;
-        if (tasks.isEmpty) {
+      data: (sections) {
+        final resolved = [for (final s in sections) (s, _resolve(s))];
+        if (resolved.every((r) => r.$2.isEmpty)) {
           final filtered = ref.watch(labelFilterProvider).isActive;
           return _EmptyState(
             message: filtered
                 ? 'No tasks match the selected labels'
-                : 'Nothing in ${group?.name ?? 'this group'} yet',
+                : sections.length == 1
+                ? 'Nothing in ${sections.single.list.name} yet'
+                : 'Nothing in these lists yet',
           );
         }
-        return ReorderableListView.builder(
-          buildDefaultDragHandles: false,
-          padding: const EdgeInsets.only(bottom: 88),
-          itemCount: tasks.length,
-          onReorderItem: (oldIndex, newIndex) =>
-              _reorder(tasks, oldIndex, newIndex),
-          itemBuilder: (context, i) {
-            final view = tasks[i];
-            final tile = TaskTile(
-              view: view,
-              size: size,
-              selected: size == LayoutSize.expanded && view.id == selectedId,
-              onTap: () => widget.onOpen(view),
-              onToggleComplete: (v) => dao.setCompleted(view.id, v),
-              dragHandle: ReorderableDragStartListener(
-                index: i,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.drag_indicator,
-                    semanticLabel: 'Reorder ${view.task.title}',
+
+        if (resolved.length == 1) {
+          final (section, tasks) = resolved.single;
+          return ReorderableListView.builder(
+            buildDefaultDragHandles: false,
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: tasks.length,
+            onReorderItem: (o, n) => _reorder(section, tasks, o, n),
+            itemBuilder: (context, i) => _item(tasks[i], i, selectedId),
+          );
+        }
+
+        return CustomScrollView(
+          slivers: [
+            for (final (section, tasks) in resolved)
+              SliverMainAxisGroup(
+                key: ValueKey('section-${section.list.id}'),
+                slivers: [
+                  PinnedHeaderSliver(
+                    child: _SectionHeader(
+                      list: section.list,
+                      count: tasks.length,
+                    ),
                   ),
-                ),
+                  if (tasks.isEmpty)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        child: Text('No tasks'),
+                      ),
+                    )
+                  else
+                    SliverReorderableList(
+                      itemCount: tasks.length,
+                      onReorderItem: (o, n) => _reorder(section, tasks, o, n),
+                      itemBuilder: (context, i) =>
+                          _item(tasks[i], i, selectedId),
+                    ),
+                ],
               ),
-            );
-            return LongPressDraggable<String>(
-              key: ValueKey(view.id),
-              data: view.id,
-              hapticFeedbackOnStart: true,
-              feedback: _DragFeedback(title: view.task.title),
-              childWhenDragging: Opacity(opacity: 0.4, child: tile),
-              child: tile,
-            );
-          },
+            const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
+          ],
         );
       },
+    );
+  }
+}
+
+/// Pinned section header in the combined view; also a drop target.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.list, required this.count});
+  final TaskGroup list;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return GroupDropTarget(
+      group: list,
+      builder: (context, hovering) => Material(
+        color: hovering ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  list.name,
+                  style: theme.textTheme.titleSmall,
+                  semanticsLabel: '${list.name}, $count tasks',
+                ),
+              ),
+              Text(
+                '$count',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

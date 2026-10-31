@@ -131,7 +131,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
           ),
           onChanged: (_) => _scheduleSave(),
         ),
-        heading('Group'),
+        heading('List'),
         DropdownButtonFormField<String>(
           initialValue: view.task.groupId,
           key: ValueKey('group-${view.task.groupId}'),
