@@ -23,6 +23,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned to match local dev. 3.50 deprecates package:flutter/material.dart
+          # (move to package:material_ui), which fails `flutter analyze`.
+          flutter-version: 3.47.9
           cache: true
       - run: flutter pub get
       - run: flutter test
@@ -56,6 +59,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned to match local dev. 3.50 deprecates package:flutter/material.dart
+          # (move to package:material_ui), which fails `flutter analyze`.
+          flutter-version: 3.47.9
           cache: true
       - run: flutter pub get
       - run: flutter build web --release --base-href /todo-app/ --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
