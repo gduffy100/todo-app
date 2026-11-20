@@ -51,3 +51,6 @@ app.*.map.json
 /android/key.properties
 *.jks
 *.keystore
+
+# JVM heap dumps from out-of-memory builds
+*.hprof

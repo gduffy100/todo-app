@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/db.dart';
 import '../../state/providers.dart';
+import '../../state/sync.dart';
 import '../screens/manage_groups_screen.dart';
+import '../screens/share_list_screen.dart';
 
 /// Wraps a list destination so tasks can be dragged onto it to move them.
 ///
@@ -306,6 +308,11 @@ Future<void> showGroupMenu(
   TaskGroup group,
 ) async {
   final dao = ref.read(databaseProvider).groupsDao;
+  final user = ref.read(currentUserProvider).value;
+  final isShared =
+      ref.read(sharedListIdsProvider).value?.contains(group.id) ?? false;
+  // Null owner: created here and not uploaded yet, so it is ours.
+  final isOwner = group.ownerId == null || group.ownerId == user?.id;
   final action = await showModalBottomSheet<String>(
     context: context,
     builder: (context) => SafeArea(
@@ -323,11 +330,29 @@ Future<void> showGroupMenu(
             title: const Text('Manage lists'),
             onTap: () => Navigator.pop(context, 'manage'),
           ),
-          if (!group.isSystem)
+          if (user != null && !group.isSystem)
+            ListTile(
+              leading: const Icon(Icons.person_add_alt),
+              title: Text(isOwner ? 'Share list' : 'People'),
+              onTap: () => Navigator.pop(context, 'share'),
+            ),
+          if (user != null && !isOwner)
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Leave list'),
+              subtitle: const Text('It will be removed from this device'),
+              onTap: () => Navigator.pop(context, 'leave'),
+            ),
+          if (!group.isSystem && isOwner)
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('Delete list'),
-              subtitle: const Text('Its tasks move to the first list'),
+              subtitle: Text(
+                isShared
+                    ? 'Its tasks move to your first list, and everyone '
+                          'else loses access'
+                    : 'Its tasks move to the first list',
+              ),
               onTap: () => Navigator.pop(context, 'delete'),
             ),
         ],
@@ -347,6 +372,28 @@ Future<void> showGroupMenu(
       await Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ManageGroupsScreen()),
       );
+    case 'share':
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ShareListScreen(list: group, isOwner: isOwner),
+        ),
+      );
+    case 'leave':
+      // Read everything first: this widget may be gone once leaving is done.
+      final selection = ref.read(selectedListIdsProvider.notifier);
+      final messenger = ScaffoldMessenger.of(context);
+      final backend = ref.read(cloudBackendProvider)!;
+      final sync = ref.read(syncControllerProvider.notifier);
+      try {
+        await backend.removeMember(group.id, user!.id);
+      } catch (_) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not leave. Are you online?')),
+        );
+        return;
+      }
+      selection.selectAll(const []);
+      await sync.syncNow();
     case 'delete':
       final selection = ref.read(selectedListIdsProvider.notifier);
       await dao.deleteGroup(group.id);

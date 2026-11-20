@@ -5,7 +5,20 @@ Guidance for Claude Code working in this repository.
 ## What this is
 **Listo**: a local-first to-do app built with Flutter. (Repo and Dart package are still named `todo-app` / `todo_app`.) It targets Android first (side-loaded, then the Play Store), plus desktop/mobile web; iOS comes later. Data lives in SQLite via Drift: native SQLite on mobile, SQLite-WASM in the browser.
 
-**Stack:** Flutter (stable) · Dart · Drift · Riverpod · uuid · intl.
+**Stack:** Flutter (stable) · Dart · Drift · Riverpod · uuid · intl · Supabase (optional sign-in, sync and shared lists).
+
+## Cloud
+The app stays local-first: SQLite is always the source for the UI, and a build without `--dart-define=SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` runs local-only with no sign-in. Setup: `docs/supabase-setup.md`.
+
+- `lib/data/sync/sync_engine.dart`: one sync pass (push outbox, pull by `server_updated_at`, reconcile access).
+- `lib/state/sync.dart`: decides when to sync. `CloudBackend` is the seam; tests use `test/data/fake_cloud.dart`.
+- `supabase/migrations/`: schema and access rules. Change them only by adding a migration, and cover it in `supabase/tests` (`npm ci && npm test`, real Postgres via PGlite, no Docker).
+- Local writes are queued by SQLite triggers into `sync_outbox`, so new write paths need no sync code. `sync_outbox` and `sync_state` are local bookkeeping, and `list_members` and `list_invites` are cloud access control; all four are exempt from the data rules below.
+- Write synced rows with `row.toCompanion(false)`. Passing a data class to `insertOnConflictUpdate` leaves nulls out, so cleared values never overwrite old ones.
+- First sync gives seed rows per-user ids, so never hold a `seed-*` id across a sync.
+- Two more hard-delete exceptions, both local duplicates that never synced under their own id: seed rows replaced during that adoption, and a link row (`task_labels`, `task_dependencies`) that takes on the server's id for the same link.
+- Server reads page by key (`server_updated_at`+`id`, or `id`) and never by offset. Supabase caps a response at 1000 rows.
+- Members can rename a shared list but cannot move it for others: list order belongs to the owner.
 
 ## Commands
 Flutter SDK lives at `C:\dev\flutter` (on PATH as `flutter` / `dart`).

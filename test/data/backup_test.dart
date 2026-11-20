@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:todo_app/data/backup.dart';
 
@@ -36,6 +37,30 @@ void main() {
       views.firstWhere((v) => v.task.title == 'One').labels.single.name,
       'Gardening',
     );
+  });
+
+  test('a newer import can clear a value', () async {
+    final a = memoryDb();
+    final b = memoryDb();
+    addTearDown(a.close);
+    addTearDown(b.close);
+
+    final id = await a.tasksDao.createTask(
+      title: 'Task',
+      groupId: await groupId(a, 'Today'),
+    );
+    await a.tasksDao.updateTask(id, dueDate: Value(DateTime.utc(2030)));
+    await a.tasksDao.setCompleted(id, true);
+    await Backup(b).importJson(await Backup(a).exportJson());
+
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await a.tasksDao.updateTask(id, dueDate: const Value(null));
+    await a.tasksDao.setCompleted(id, false);
+    await Backup(b).importJson(await Backup(a).exportJson());
+
+    final task = (await b.tasksDao.loadViews()).single.task;
+    expect(task.dueDate, isNull);
+    expect(task.completedAt, isNull);
   });
 
   test('newer change wins and an older import does not overwrite', () async {

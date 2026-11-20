@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../domain/dependency_graph.dart';
 import '../domain/ordering.dart';
+import 'daos/sync_dao.dart';
 import 'db.dart';
 
 /// JSON export / import.
@@ -53,19 +54,34 @@ class Backup {
         final e = await (db.select(
           db.taskGroups,
         )..where((r) => r.id.equals(g.id))).getSingleOrNull();
-        written += await _merge(db.taskGroups, g, e?.updatedAt, g.updatedAt);
+        written += await _merge(
+          db.taskGroups,
+          g.toCompanion(false),
+          e?.updatedAt,
+          g.updatedAt,
+        );
       }
       for (final l in rows('labels').map(Label.fromJson)) {
         final e = await (db.select(
           db.labels,
         )..where((r) => r.id.equals(l.id))).getSingleOrNull();
-        written += await _merge(db.labels, l, e?.updatedAt, l.updatedAt);
+        written += await _merge(
+          db.labels,
+          l.toCompanion(false),
+          e?.updatedAt,
+          l.updatedAt,
+        );
       }
       for (final t in rows('tasks').map(Task.fromJson)) {
         final e = await (db.select(
           db.tasks,
         )..where((r) => r.id.equals(t.id))).getSingleOrNull();
-        written += await _merge(db.tasks, t, e?.updatedAt, t.updatedAt);
+        written += await _merge(
+          db.tasks,
+          t.toCompanion(false),
+          e?.updatedAt,
+          t.updatedAt,
+        );
       }
       for (final tl in rows('taskLabels').map(TaskLabel.fromJson)) {
         final existing =
@@ -78,7 +94,9 @@ class Backup {
                 .getSingleOrNull();
         written += await _merge(
           db.taskLabels,
-          existing == null ? tl : tl.copyWith(id: existing.id),
+          (existing == null ? tl : tl.copyWith(id: existing.id)).toCompanion(
+            false,
+          ),
           existing?.updatedAt,
           tl.updatedAt,
         );
@@ -94,12 +112,14 @@ class Backup {
                 .getSingleOrNull();
         written += await _merge(
           db.taskDependencies,
-          existing == null ? d : d.copyWith(id: existing.id),
+          (existing == null ? d : d.copyWith(id: existing.id)).toCompanion(
+            false,
+          ),
           existing?.updatedAt,
           d.updatedAt,
         );
       }
-      written += await _repair();
+      written += await repair();
     });
     return written;
   }
@@ -108,15 +128,19 @@ class Backup {
   /// * dependency edges from two devices can form a cycle; the newest
   ///   offending edges are soft-deleted;
   /// * a live task can point at a group deleted on this device; it moves to
-  ///   the end of the first live group.
-  Future<int> _repair() async {
+  ///   the end of the first live group. Tasks in someone else's list are left
+  ///   alone: moving one would pull it out of that list for everyone.
+  Future<int> repair() async {
     var fixed = 0;
     final now = DateTime.now().toUtc();
 
     final edges =
         await (db.select(db.taskDependencies)
               ..where((d) => d.deletedAt.isNull())
-              ..orderBy([(d) => OrderingTerm.asc(d.updatedAt)]))
+              ..orderBy([
+                (d) => OrderingTerm.asc(d.updatedAt),
+                (d) => OrderingTerm.asc(d.id),
+              ]))
             .get();
     final graph = <String, Set<String>>{};
     for (final e in edges) {
@@ -137,7 +161,15 @@ class Backup {
 
     final groups = await db.groupsDao.getGroups();
     if (groups.isEmpty) return fixed;
-    final liveGroupIds = groups.map((g) => g.id).toSet();
+    final me = await db.syncDao.getValue(SyncDao.ownerKey);
+    final owned = await (db.select(
+      db.taskGroups,
+    )..where((g) => g.ownerId.isNotNull())).get();
+    final liveGroupIds = {
+      ...groups.map((g) => g.id),
+      for (final g in owned)
+        if (g.ownerId != me) g.id,
+    };
     final orphans =
         await (db.select(db.tasks)
               ..where(
@@ -146,7 +178,9 @@ class Backup {
               ..orderBy([(t) => OrderingTerm.asc(t.sortKey)]))
             .get();
     if (orphans.isEmpty) return fixed;
-    final target = groups.first.id;
+    final target = groups
+        .firstWhere((g) => g.isSystem, orElse: () => groups.first)
+        .id;
     final last =
         await (db.select(db.tasks)
               ..where((t) => t.groupId.equals(target) & t.deletedAt.isNull())

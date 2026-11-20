@@ -23,6 +23,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned to match local dev. 3.50 deprecates package:flutter/material.dart
+          # (move to package:material_ui), which fails `flutter analyze`.
+          flutter-version: 3.47.9
           cache: true
       - run: flutter pub get
       - run: flutter test
@@ -36,8 +39,8 @@ jobs:
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           EOF
-      - run: flutter build appbundle --release
-      - run: flutter build apk --release
+      - run: flutter build appbundle --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      - run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -56,9 +59,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # Pinned to match local dev. 3.50 deprecates package:flutter/material.dart
+          # (move to package:material_ui), which fails `flutter analyze`.
+          flutter-version: 3.47.9
           cache: true
       - run: flutter pub get
-      - run: flutter build web --release --base-href /todo-app/
+      - run: flutter build web --release --base-href /todo-app/ --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_PUBLISHABLE_KEY=${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
