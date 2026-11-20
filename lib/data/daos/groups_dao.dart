@@ -54,7 +54,11 @@ class GroupsDao extends DatabaseAccessor<AppDatabase> with _$GroupsDaoMixin {
     if (group.isSystem) {
       throw StateError('System group "${group.name}" cannot be deleted');
     }
-    final target = groups.firstWhere((g) => g.id != id);
+    // A default list is never shared, so this cannot expose the tasks.
+    final target = groups.firstWhere(
+      (g) => g.isSystem,
+      orElse: () => groups.firstWhere((g) => g.id != id),
+    );
     final now = nowUtc();
     final moving =
         await (select(tasks)

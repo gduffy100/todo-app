@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/db.dart';
 import '../../data/models.dart';
 import '../../state/providers.dart';
+import '../../state/sync.dart';
 import '../layout/breakpoints.dart';
 import '../widgets/group_nav.dart';
 import '../widgets/label_filter_bar.dart';
 import '../widgets/task_editor.dart';
 import '../widgets/task_list.dart';
+import 'account_screen.dart';
 import 'data_transfer.dart';
 import 'labels_screen.dart';
 import 'manage_groups_screen.dart';
@@ -18,6 +20,8 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keeps sync running for as long as the app is open.
+    ref.listen(syncControllerProvider, (_, _) {});
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = LayoutSize.fromWidth(constraints.maxWidth);
@@ -239,6 +243,9 @@ class _MainMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showCompleted = ref.watch(showCompletedProvider);
+    final hasCloud = ref.watch(cloudBackendProvider) != null;
+    final user = ref.watch(currentUserProvider).value;
+    final invites = ref.watch(myInvitesProvider).value?.length ?? 0;
     return PopupMenuButton<String>(
       tooltip: 'Menu',
       onSelected: (v) {
@@ -255,6 +262,10 @@ class _MainMenu extends ConsumerWidget {
                 builder: (_) => const ManageGroupsScreen(),
               ),
             );
+          case 'account':
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AccountScreen()),
+            );
           case 'export':
             exportData(context, ref);
           case 'import':
@@ -270,6 +281,17 @@ class _MainMenu extends ConsumerWidget {
         const PopupMenuItem(value: 'labels', child: Text('Manage labels')),
         const PopupMenuItem(value: 'groups', child: Text('Manage lists')),
         const PopupMenuDivider(),
+        if (hasCloud)
+          PopupMenuItem(
+            value: 'account',
+            child: Text(
+              user == null
+                  ? 'Sign in'
+                  : invites == 0
+                  ? 'Account'
+                  : 'Account ($invites invitation${invites == 1 ? '' : 's'})',
+            ),
+          ),
         const PopupMenuItem(value: 'export', child: Text('Export data')),
         const PopupMenuItem(value: 'import', child: Text('Import data')),
       ],

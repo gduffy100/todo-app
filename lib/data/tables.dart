@@ -5,6 +5,15 @@ const _uuid = Uuid();
 String newId() => _uuid.v4();
 DateTime nowUtc() => DateTime.now().toUtc();
 
+/// Tables that sync, parents first, under their names on both sides.
+const syncedTables = [
+  'task_groups',
+  'labels',
+  'tasks',
+  'task_labels',
+  'task_dependencies',
+];
+
 /// Columns every table carries so a future last-write-wins sync can merge
 /// rows by id + updated_at and propagate deletions via deleted_at.
 mixin SyncColumns on Table {
@@ -19,6 +28,8 @@ mixin SyncColumns on Table {
 
 @DataClassName('TaskGroup')
 class TaskGroups extends Table with SyncColumns {
+  /// Set once synced. Null means created here and not yet uploaded.
+  TextColumn get ownerId => text().nullable()();
   TextColumn get name => text().withLength(min: 1, max: 60)();
   TextColumn get sortKey => text()();
   BoolColumn get isSystem => boolean().withDefault(const Constant(false))();
@@ -36,6 +47,8 @@ class Tasks extends Table with SyncColumns {
 
 @DataClassName('Label')
 class Labels extends Table with SyncColumns {
+  /// Set once synced. Null means created here and not yet uploaded.
+  TextColumn get ownerId => text().nullable()();
   TextColumn get name => text().withLength(min: 1, max: 40)();
 
   /// ARGB colour.
@@ -64,4 +77,23 @@ class TaskDependencies extends Table with SyncColumns {
   List<Set<Column>> get uniqueKeys => [
     {taskId, predecessorId},
   ];
+}
+
+/// Rows changed locally and not yet sent. Filled by database triggers, so no
+/// write path can forget it. Sync bookkeeping, not user data, so it does not
+/// carry [SyncColumns] and never leaves the device.
+@TableIndex(name: 'sync_outbox_row', columns: {#rowTable, #rowId}, unique: true)
+class SyncOutbox extends Table {
+  IntColumn get seq => integer().autoIncrement()();
+  TextColumn get rowTable => text()();
+  TextColumn get rowId => text()();
+}
+
+/// Small saved values for sync, such as cursors. Bookkeeping, as above.
+class SyncState extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {key};
 }

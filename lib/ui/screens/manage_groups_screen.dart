@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/providers.dart';
+import '../../state/sync.dart';
 import '../widgets/group_nav.dart';
 
 class ManageGroupsScreen extends ConsumerWidget {
@@ -11,6 +12,7 @@ class ManageGroupsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groups = ref.watch(groupsProvider).value ?? const [];
     final dao = ref.read(databaseProvider).groupsDao;
+    final shared = ref.watch(sharedListIdsProvider).value ?? const <String>{};
 
     return Scaffold(
       appBar: AppBar(title: const Text('Lists')),
@@ -29,7 +31,11 @@ class ManageGroupsScreen extends ConsumerWidget {
           return ListTile(
             key: ValueKey(g.id),
             title: Text(g.name),
-            subtitle: g.isSystem ? const Text('Default list') : null,
+            subtitle: g.isSystem
+                ? const Text('Default list')
+                : shared.contains(g.id)
+                ? const Text('Shared')
+                : null,
             onTap: () => showGroupMenu(context, ref, g),
             trailing: ReorderableDragStartListener(
               index: i,
